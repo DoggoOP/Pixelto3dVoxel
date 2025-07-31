@@ -1,0 +1,22 @@
+{
+    "voxel": {
+        "N": 500,
+        "voxel_size": 6.0,
+        "center": [0.0, 0.0, 500.0]
+    },
+    "cameras": [{
+            "id": "cam01",
+            "folder": "cameras/cam01",
+            "position": [100.0, 0.0, 10.0],
+            "yaw_pitch_roll": [0.0, 0.0, 0.0],
+            "fov_degrees": 60.0
+        },
+        {
+            "id": "cam02",
+            "folder": "cameras/cam02",
+            "position": [-100.0, 0.0, 10.0],
+            "yaw_pitch_roll": [180.0, 0.0, 0.0],
+            "fov_degrees": 60.0
+        }
+    ]
+}
