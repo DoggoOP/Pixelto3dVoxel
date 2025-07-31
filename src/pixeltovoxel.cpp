@@ -133,8 +133,10 @@ static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& g
 
     cv::Vec3f invDir{1.0f / dir[0], 1.0f / dir[1], 1.0f / dir[2]};
     cv::Vec3f tMaxV  = (nextVoxelBoundary - camPos).mul(invDir);
-    cv::Vec3f tDelta = cv::abs(cv::Vec3f(grid.voxelSize, grid.voxelSize, grid.voxelSize).mul(invDir));
-
+    cv::Vec3f tDelta = cv::Vec3f(grid.voxelSize, grid.voxelSize, grid.voxelSize).mul(invDir);
+    tDelta[0] = std::abs(tDelta[0]);
+    tDelta[1] = std::abs(tDelta[1]);
+    tDelta[2] = std::abs(tDelta[2]);
 
     const int MAX_STEPS = grid.N*3; // conservative
     for (int stepCount=0; stepCount<MAX_STEPS; ++stepCount) {
