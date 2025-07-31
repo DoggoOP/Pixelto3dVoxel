@@ -1,0 +1,4 @@
+/Users/ethan.k/Desktop/CodingNStuff/python/Pixelto3dVoxel/build/CMakeFiles/pixeltovoxel.dir
+/Users/ethan.k/Desktop/CodingNStuff/python/Pixelto3dVoxel/build/CMakeFiles/process_rays.dir
+/Users/ethan.k/Desktop/CodingNStuff/python/Pixelto3dVoxel/build/CMakeFiles/edit_cache.dir
+/Users/ethan.k/Desktop/CodingNStuff/python/Pixelto3dVoxel/build/CMakeFiles/rebuild_cache.dir
