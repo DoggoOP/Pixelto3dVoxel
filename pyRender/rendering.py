@@ -50,12 +50,12 @@ CAM_PITCH = 5.0
 CAM_ROLL = 0.0
 
 # Plane start and end positions in latitude, longitude and altitude (metres).
-PLANE_START_LAT = -0.005
-PLANE_START_LON = 0.0001
+PLANE_START_LAT = -0.01
+PLANE_START_LON = -0.01
 PLANE_START_ALT = 10.0
 
-PLANE_END_LAT = -0.005
-PLANE_END_LON = 0.0001
+PLANE_END_LAT = -0.01
+PLANE_END_LON = 0.01
 PLANE_END_ALT = 10.0
 
 # Video parameters.
