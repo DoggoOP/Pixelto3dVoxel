@@ -28,16 +28,23 @@ for f in files:
     # Ensure pts is a 2D array even when a single point is present
     if pts.ndim == 1:
         pts = pts[None, :]
-    coords, vals = pts[:, :3], pts[:, 3]
+    # copy to ensure vedo does not reference temporary memory that may be freed
+    coords = pts[:, :3].copy()
+    vals = pts[:, 3].copy()
     if pts_actor is None:
         pts_actor = Points(coords, r=4)
+        # stash arrays on the actor so Python keeps them alive
+        pts_actor._coords_ref = coords
+        pts_actor._vals_ref = vals
         pts_actor.pointdata["val"] = vals
         pts_actor.cmap('jet', "val")
         plot = show([pts_actor, cam_actor], axes=axes_opts, bg='white',
                     interactive=False, title='Voxel Hits')
     else:
         pts_actor.points = coords
+        pts_actor._coords_ref = coords
         pts_actor.pointdata["val"] = vals
+        pts_actor._vals_ref = vals
         pts_actor.cmap('jet', "val")
         plot.show(None, resetcam=False)
     time.sleep(0.1)
