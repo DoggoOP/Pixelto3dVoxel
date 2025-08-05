@@ -1,5 +1,5 @@
 from vedo import Points, show, settings
-import numpy as np, os, time, sys
+import numpy as np, os, glob, json, time
 
 ROOT = os.path.dirname(__file__)
 BUILD = os.path.join(ROOT, '..', 'build')

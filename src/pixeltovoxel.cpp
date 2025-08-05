@@ -93,11 +93,14 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
 
     for (auto& jc : j["cameras"]) {
         Camera cam;
-        cam.id = jc["id"].get<std::string>();
-        fs::path folder = jc["folder"].get<std::string>();
-        cam.folder = (folder.is_relative() ? (base / folder) : folder).string();
-        cam.position = { jc["position"][0].get<float>(), jc["position"][1].get<float>(), jc["position"][2].get<float>() };
-        cam.ypr_deg = { jc["yaw_pitch_roll"][0].get<float>(), jc["yaw_pitch_roll"][1].get<float>(), jc["yaw_pitch_roll"][2].get<float>() };
+        cam.id      = jc["id"].get<std::string>();
+        cam.folder  = (base / jc["folder"].get<std::string>()).string();
+        cam.position = { jc["position"][0].get<float>(),
+                         jc["position"][1].get<float>(),
+                         jc["position"][2].get<float>() };
+        cam.ypr_deg = { jc["yaw_pitch_roll"][0].get<float>(),
+                        jc["yaw_pitch_roll"][1].get<float>(),
+                        jc["yaw_pitch_roll"][2].get<float>() };
         cam.fov_deg = jc["fov_degrees"].get<float>();
 
         // collect frames (sorted)
