@@ -13,7 +13,7 @@ def main():
     subprocess.check_call(['./pixeltovoxel', '../metadata.json'], cwd=build)
 
     # Launch visualiser (non‑blocking)
-    subprocess.Popen([sys.executable, '../scripts/visualize_voxels.py'])
+    subprocess.Popen([sys.executable, os.path.join(root, 'visualize_voxels.py')])
 
 if __name__ == '__main__':
     main()

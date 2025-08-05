@@ -89,13 +89,16 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
     auto c = j["voxel"]["center"];
     grid = VoxelGrid(N, vs, {c[0].get<float>(), c[1].get<float>(), c[2].get<float>()});
 
+    fs::path base = fs::path(path).parent_path();
+
     for (auto& jc : j["cameras"]) {
         Camera cam;
-        cam.id        = jc["id"].get<std::string>();
-        cam.folder    = jc["folder"].get<std::string>();
-        cam.position  = { jc["position"][0].get<float>(), jc["position"][1].get<float>(), jc["position"][2].get<float>() };
-        cam.ypr_deg   = { jc["yaw_pitch_roll"][0].get<float>(), jc["yaw_pitch_roll"][1].get<float>(), jc["yaw_pitch_roll"][2].get<float>() };
-        cam.fov_deg   = jc["fov_degrees"].get<float>();
+        cam.id = jc["id"].get<std::string>();
+        fs::path folder = jc["folder"].get<std::string>();
+        cam.folder = (folder.is_relative() ? (base / folder) : folder).string();
+        cam.position = { jc["position"][0].get<float>(), jc["position"][1].get<float>(), jc["position"][2].get<float>() };
+        cam.ypr_deg = { jc["yaw_pitch_roll"][0].get<float>(), jc["yaw_pitch_roll"][1].get<float>(), jc["yaw_pitch_roll"][2].get<float>() };
+        cam.fov_deg = jc["fov_degrees"].get<float>();
 
         // collect frames (sorted)
         std::vector<std::string> frames;
