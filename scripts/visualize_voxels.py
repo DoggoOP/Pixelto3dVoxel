@@ -22,16 +22,19 @@ if not files:
 plot = None
 pts_actor = None
 for f in files:
-    pts = np.loadtxt(f)
-    if pts.size == 0:
+    if os.path.getsize(f) == 0:
         continue
+    pts = np.loadtxt(f)
+    # Ensure pts is a 2D array even when a single point is present
+    if pts.ndim == 1:
+        pts = pts[None, :]
     coords, vals = pts[:, :3], pts[:, 3]
     if pts_actor is None:
         pts_actor = Points(coords, r=4).cmap('jet', vals)
         plot = show([pts_actor, cam_actor], axes=axes_opts, bg='white',
                     interactive=False, title='Voxel Hits')
     else:
-        pts_actor.points(coords)
+        pts_actor.points = coords
         pts_actor.cmap('jet', vals)
         plot.show(None, resetcam=False)
     time.sleep(0.1)
