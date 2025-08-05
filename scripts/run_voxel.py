@@ -11,7 +11,6 @@ def main():
 
     # Run pipeline
     subprocess.check_call(['./pixeltovoxel', '../metadata.json'], cwd=build)
-    subprocess.check_call(['./process_rays'], cwd=build)
 
     # Launch visualiser (non‑blocking)
     subprocess.Popen([sys.executable, '../scripts/visualize_voxels.py'])

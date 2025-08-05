@@ -1,31 +1,39 @@
 from vedo import Points, show, settings
-import numpy as np, os, time, sys
+import numpy as np, os, glob, json, time
 
 settings.default_font_size = 12
-PATH = os.path.join(os.path.dirname(__file__), '..', 'build', 'hits.xyz')
-THRESH = 0.0
+ROOT = os.path.dirname(__file__)
+BUILD = os.path.join(ROOT, '..', 'build')
 
-last_mtime = 0
+# Load camera positions to define bounds
+with open(os.path.join(ROOT, '..', 'metadata.json')) as f:
+    meta = json.load(f)
+cam_pos = np.array([c['position'] for c in meta['cameras']])
+bmin = cam_pos.min(axis=0)
+bmax = cam_pos.max(axis=0)
+axes_opts = dict(xrange=(bmin[0], bmax[0]),
+                 yrange=(bmin[1], bmax[1]),
+                 zrange=(bmin[2], bmax[2]))
+cam_actor = Points(cam_pos, r=12, c='black')
+
+files = sorted(glob.glob(os.path.join(BUILD, 'hits_*.xyz')))
+if not files:
+    raise SystemExit('No hits_*.xyz files found')
+
 plot = None
-points = None
-
-while True:
-    if not os.path.exists(PATH):
-        time.sleep(1); continue
-    mtime = os.path.getmtime(PATH)
-    if mtime == last_mtime:
-        time.sleep(0.5); continue
-    last_mtime = mtime
-    pts = np.loadtxt(PATH)
+pts_actor = None
+for f in files:
+    pts = np.loadtxt(f)
     if pts.size == 0:
-        time.sleep(0.5); continue
-    coords = pts[:, :3]
-    vals = pts[:, 3]
-    if points is None:
-        points = Points(coords, r=4).cmap("jet", vals)
-        plot = show(points, axes=1, bg="white", interactive=False, title="Voxel Hits")
+        continue
+    coords, vals = pts[:, :3], pts[:, 3]
+    if pts_actor is None:
+        pts_actor = Points(coords, r=4).cmap('jet', vals)
+        plot = show([pts_actor, cam_actor], axes=axes_opts, bg='white',
+                    interactive=False, title='Voxel Hits')
     else:
-        points.points(coords)
-        points.cmap("jet", vals)
+        pts_actor.points(coords)
+        pts_actor.cmap('jet', vals)
         plot.show(None, resetcam=False)
-    time.sleep(0.5)
+    time.sleep(0.1)
+

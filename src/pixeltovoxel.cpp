@@ -2,6 +2,9 @@
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
+#include <algorithm>
 #include "camera.h"
 #include "math_utils.h"
 #include "voxel_grid.h"
@@ -11,7 +14,6 @@ namespace fs = std::filesystem;
 
 // --- forward declarations --------------------------------------------------
 static void load_metadata(const std::string& path, std::vector<Camera>& cams, VoxelGrid& grid);
-static void process_camera(const Camera& cam, VoxelGrid& grid, float motionThreshold);
 static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid, float pixVal);
 
 int main(int argc, char** argv) {
@@ -24,17 +26,57 @@ int main(int argc, char** argv) {
     load_metadata(argv[1], cams, grid);
 
     const float MOTION_THRESHOLD = 2.0f;
-    for (const auto& cam : cams) {
-        process_camera(cam, grid, MOTION_THRESHOLD);
+    size_t maxFrames = 0;
+    for (const auto& c : cams) maxFrames = std::max(maxFrames, c.frames.size());
+
+    std::vector<cv::Mat> prevImgs(cams.size());
+    for (size_t fi = 0; fi < maxFrames; ++fi) {
+        grid.clear();
+        for (size_t ci = 0; ci < cams.size(); ++ci) {
+            const Camera& cam = cams[ci];
+            if (fi >= cam.frames.size()) continue;
+            cv::Mat img = cv::imread(cam.frames[fi], cv::IMREAD_GRAYSCALE);
+            if (img.empty()) continue;
+            if (prevImgs[ci].empty()) { prevImgs[ci] = img; continue; }
+            cv::Mat diff;
+            cv::absdiff(img, prevImgs[ci], diff);
+            prevImgs[ci] = img;
+
+            const float focal_px = 0.5f * cam.fov_deg * CV_PI / 180.0f; // approximate
+            const cv::Matx33f Rcw = cam.rotation();
+            for (int v = 0; v < diff.rows; ++v) {
+                const uchar* row = diff.ptr<uchar>(v);
+                for (int u = 0; u < diff.cols; ++u) {
+                    if (row[u] < MOTION_THRESHOLD) continue;
+                    float x = (u - 0.5f*diff.cols);
+                    float y = -(v - 0.5f*diff.rows);
+                    float z = -focal_px;
+                    cv::Vec3f dir_cam = cv::normalize(cv::Vec3f(x, y, z));
+                    cv::Vec3f dir_world = Rcw * dir_cam;
+                    cast_ray(cam.position, dir_world, grid, static_cast<float>(row[u]));
+                }
+            }
+        }
+
+        // write hits for this frame
+        std::ostringstream oss;
+        oss << "hits_" << std::setw(4) << std::setfill('0') << fi << ".xyz";
+        std::ofstream xyz(oss.str());
+        const float THRESH = 5.0f;
+        const float half = 0.5f * grid.N * grid.voxelSize;
+        cv::Vec3f boxMin = grid.center - cv::Vec3f(half, half, half);
+        for (int iz=0; iz<grid.N; ++iz)
+          for (int iy=0; iy<grid.N; ++iy)
+            for (int ix=0; ix<grid.N; ++ix) {
+              float v = grid.data[(iz*grid.N + iy)*grid.N + ix];
+              if (v < THRESH) continue;
+              float x = boxMin[0] + (ix + 0.5f) * grid.voxelSize;
+              float y = boxMin[1] + (iy + 0.5f) * grid.voxelSize;
+              float z = boxMin[2] + (iz + 0.5f) * grid.voxelSize;
+              xyz << x << " " << y << " " << z << " " << v << "\n";
+            }
     }
 
-    // write raw grid to binary
-    std::ofstream out("rays.bin", std::ios::binary);
-    out.write(reinterpret_cast<char*>(&grid.N), sizeof(int));
-    out.write(reinterpret_cast<char*>(&grid.voxelSize), sizeof(float));
-    out.write(reinterpret_cast<char*>(&grid.center), sizeof(float)*3);
-    out.write(reinterpret_cast<char*>(grid.data.data()), sizeof(float)*grid.data.size());
-    out.close();
     return 0;
 }
 
@@ -68,36 +110,6 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
 }
 
 // ---------------------------------------------------------------------------
-static void process_camera(const Camera& cam, VoxelGrid& grid, float motionThreshold) {
-    if (cam.frames.size() < 2) return;
-    cv::Mat prev;
-    const float focal_px = 0.5f * cam.fov_deg * CV_PI / 180.0f; // approximate
-
-    const cv::Matx33f Rcw = cam.rotation();
-
-    for (size_t i = 0; i < cam.frames.size(); ++i) {
-        cv::Mat img = cv::imread(cam.frames[i], cv::IMREAD_GRAYSCALE);
-        if (img.empty()) continue;
-        if (prev.empty()) { prev = img; continue; }
-        cv::Mat diff;
-        cv::absdiff(img, prev, diff);
-        prev = img;
-        for (int v = 0; v < diff.rows; ++v) {
-            const uchar* row = diff.ptr<uchar>(v);
-            for (int u = 0; u < diff.cols; ++u) {
-                if (row[u] < motionThreshold) continue;
-                // pixel to camera‑local ray (pinhole)
-                float x = (u - 0.5f*diff.cols);
-                float y = -(v - 0.5f*diff.rows);
-                float z = -focal_px;
-                cv::Vec3f dir_cam = cv::normalize(cv::Vec3f(x, y, z));
-                cv::Vec3f dir_world = Rcw * dir_cam;
-                cast_ray(cam.position, dir_world, grid, static_cast<float>(row[u]));
-            }
-        }
-    }
-}
-
 // 3‑D DDA traversal ----------------------------------------------------------
 static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid, float pixVal) {
     // compute entry point into bounding box
