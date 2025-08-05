@@ -30,12 +30,17 @@ for f in files:
         pts = pts[None, :]
     coords, vals = pts[:, :3], pts[:, 3]
     if pts_actor is None:
-        pts_actor = Points(coords, r=4).cmap('jet', vals)
+        pts_actor = Points(coords, r=4)
+        pts_actor.pointdata["val"] = vals
+        pts_actor.cmap('jet', "val")
         plot = show([pts_actor, cam_actor], axes=axes_opts, bg='white',
                     interactive=False, title='Voxel Hits')
     else:
         pts_actor.points = coords
-        pts_actor.cmap('jet', vals)
+        pts_actor.pointdata["val"] = vals
+        pts_actor.cmap('jet', "val")
         plot.show(None, resetcam=False)
     time.sleep(0.1)
 
+if plot is not None:
+    plot.close()
