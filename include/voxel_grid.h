@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <algorithm>
 #include <opencv2/core.hpp>
 
 struct VoxelGrid {
@@ -16,5 +17,8 @@ struct VoxelGrid {
     }
     inline void add(int ix, int iy, int iz, float v) {
         data[idx(ix, iy, iz)] += v;
+    }
+    inline void clear() {
+        std::fill(data.begin(), data.end(), 0.0f);
     }
 };
