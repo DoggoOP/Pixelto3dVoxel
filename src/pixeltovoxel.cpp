@@ -42,17 +42,21 @@ int main(int argc, char** argv) {
             cv::absdiff(img, prevImgs[ci], diff);
             prevImgs[ci] = img;
 
-            const float focal_px = 0.5f * cam.fov_deg * CV_PI / 180.0f; // approximate
+            // Focal length in pixels from horizontal FOV
+            const float focal_px = 0.5f * diff.cols / tanf(0.5f * cam.fov_deg * CV_PI / 180.0f);
             const cv::Matx33f Rcw = cam.rotation();
             for (int v = 0; v < diff.rows; ++v) {
                 const uchar* row = diff.ptr<uchar>(v);
                 for (int u = 0; u < diff.cols; ++u) {
                     if (row[u] < MOTION_THRESHOLD) continue;
-                    float x = (u - 0.5f*diff.cols);
-                    float y = -(v - 0.5f*diff.rows);
-                    float z = -focal_px;
-                    cv::Vec3f dir_cam = cv::normalize(cv::Vec3f(x, y, z));
-                    cv::Vec3f dir_world = Rcw * dir_cam;
+                    float px = (u - 0.5f * diff.cols);    // image right
+                    float py = -(v - 0.5f * diff.rows);   // image up
+                    float pz = focal_px;                 // forward
+
+                    // Convert image coordinates to body frame:
+                    // body X=fwd, Y=left, Z=up
+                    cv::Vec3f dir_body(pz, -px, py);
+                    cv::Vec3f dir_world = Rcw * cv::normalize(dir_body);
                     cast_ray(cam.position, dir_world, grid, static_cast<float>(row[u]));
                 }
             }
