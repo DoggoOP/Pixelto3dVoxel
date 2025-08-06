@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 import numpy as np
-from vedo import Lines, Points, Plotter, Box, settings
+from vedo import Lines, Points, Plotter, Box, Sphere, Text3D, settings
 
 # ------------------------------------------------------------------ helpers
 def _maybe_start_xvfb() -> None:
@@ -28,21 +28,22 @@ def _maybe_start_xvfb() -> None:
         settings.start_xvfb()
 
 
-def _load_meta(meta_file: Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return camera positions and voxel grid bounds from metadata."""
+def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray]:
+    """Return camera positions, ids and voxel grid bounds from metadata."""
     import json
 
     with meta_file.open() as f:
         meta = json.load(f)
-    cam_pos = np.asarray([cam["position"] for cam in meta["cameras"]],
-                         dtype=np.float32)
+    cams = meta["cameras"]
+    cam_ids = [c["id"] for c in cams]
+    cam_pos = np.asarray([c["position"] for c in cams], dtype=np.float32)
 
     v = meta["voxel"]
     N = float(v["N"]) * v["voxel_size"]
     center = np.asarray(v["center"], dtype=np.float32)
     half = 0.5 * N
     box_min, box_max = center - half, center + half
-    return cam_pos, box_min, box_max
+    return cam_pos, cam_ids, box_min, box_max
 
 
 # ------------------------------------------------------------------ main
@@ -51,13 +52,15 @@ def main() -> None:
 
     ROOT = Path(__file__).resolve().parent.parent
     BUILD = ROOT / "build"
-    cam_pos, bmin, bmax = _load_meta(ROOT / "metadata.json")
+    cam_pos, cam_ids, bmin, bmax = _load_meta(ROOT / "metadata.json")
     axes_opts = dict(xrange=(bmin[0], bmax[0]),
                      yrange=(bmin[1], bmax[1]),
                      zrange=(bmin[2], bmax[2]))
 
     # actors created once ----------------------------------------------------
-    cam_actors = [Points([cam], r=12, c="red") for cam in cam_pos]
+    cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
+    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8, c="red")
+                  for cam, cid in zip(cam_pos, cam_ids)]
 
     pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
     ray_lines = [Lines([cam], [cam], c="black", lw=1) for cam in cam_pos]
@@ -67,7 +70,7 @@ def main() -> None:
 
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
-    plt += [pts_actor, grid_box, *cam_actors, *ray_lines]
+    plt += [pts_actor, grid_box, *cam_actors, *cam_labels, *ray_lines]
     plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
 
     # gather xyz files -------------------------------------------------------
