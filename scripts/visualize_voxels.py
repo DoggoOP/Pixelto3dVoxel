@@ -57,7 +57,7 @@ def main() -> None:
                      zrange=(bmin[2], bmax[2]))
 
     # actors created once ----------------------------------------------------
-    cam_actor = Points(cam_pos, r=12, c="black")
+    cam_actors = [Points([cam], r=12, c="red") for cam in cam_pos]
 
     pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
     ray_lines = [Lines([cam], [cam], c="black", lw=1) for cam in cam_pos]
@@ -67,7 +67,7 @@ def main() -> None:
 
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
-    plt += [pts_actor, cam_actor, grid_box, *ray_lines]
+    plt += [pts_actor, grid_box, *cam_actors, *ray_lines]
     plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
 
     # gather xyz files -------------------------------------------------------
