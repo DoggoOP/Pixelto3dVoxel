@@ -33,6 +33,16 @@ def geodetic_to_enu(lat: float, lon: float, alt: float,
     up = alt - alt0
     return np.array([east, north, up], dtype=np.float32)
 
+
+def enu_to_geodetic(enu: np.ndarray, lat0: float, lon0: float, alt0: float = 0.0) -> np.ndarray:
+    """Local ENU metres → WGS‑84 (lat, lon in degrees, alt in metres)."""
+    R = 6_378_137.0
+    east, north, up = enu[..., 0], enu[..., 1], enu[..., 2]
+    lat = lat0 + np.rad2deg(north / R)
+    lon = lon0 + np.rad2deg(east / (R * np.cos(np.deg2rad(lat0))))
+    alt = alt0 + up
+    return np.stack([lat, lon, alt], axis=-1)
+
 # ------------------------------------------------------------------ helpers
 def _maybe_start_xvfb() -> None:
     """Start an off-screen OpenGL buffer only on headless Linux boxes."""
@@ -47,6 +57,7 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
     we convert everything back to geodetic degrees so that 1 unit along X/Y
     equals 1° in longitude/latitude respectively.
     """
+
     import json
 
     with meta_file.open() as f:
@@ -54,6 +65,7 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
     cams = meta["cameras"]
     cam_ids = [c["id"] for c in cams]
 
+    
     lat0 = lon0 = alt0 = 0.0
     use_geo = False
     if "geo_reference" in meta:
@@ -75,7 +87,7 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
             cam_pos.append([c["lon_deg"], c["lat_deg"], c.get("alt_m", 0.0)])
         else:
             cam_pos.append(c["position"])
-    cam_pos = np.asarray(cam_pos, dtype=np.float32)
+        cam_pos = np.asarray(cam_pos, dtype=np.float32)
 
     v = meta["voxel"]
     half_m = 0.5 * float(v["N"]) * v["voxel_size"]
@@ -118,11 +130,12 @@ def main() -> None:
                      xtitle="lon (deg)", ytitle="lat (deg)", ztitle="alt (m)")
 
     # actors created once ----------------------------------------------------
-    cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
-    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8, c="red")
+    cam_actors = [Sphere(pos=cam, r=(0.001 if not use_geo else 1e-3), c="red") for cam in cam_pos]
+    offset = np.array([0.2, 0.2, 0]) if not use_geo else np.array([2e-3, 2e-3, 0])
+    cam_labels = [Text3D(cid, cam + offset, s=8, c="red")
                   for cam, cid in zip(cam_pos, cam_ids)]
 
-    pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
+    pts_actor = Points([[0, 0, 0]], r=0.4)           # placeholder
     ray_lines = [Lines([cam], [cam], c="black", lw=1) for cam in cam_pos]
 
     grid_box = Box(pos=(bmin + bmax) / 2, size=bmax - bmin,
@@ -131,7 +144,8 @@ def main() -> None:
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
     plt += [pts_actor, grid_box, *cam_actors, *cam_labels, *ray_lines]
-    plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
+    plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45,
+         zoom=2.0)
 
     # gather xyz files -------------------------------------------------------
     xyz_files = sorted(BUILD.glob("hits_*.xyz"))

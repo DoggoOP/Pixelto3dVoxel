@@ -7,14 +7,13 @@
     "voxel": {
         "N": 500,
         "voxel_size": 6.0,
-        "center_geo": {"lat_deg": 0.0, "lon_deg": 0.0, "alt_m": 50.0}
+        "center_geo": { "lat_deg": 0.0, "lon_deg": 0.0, "alt_m": 50.0 }
     },
-    "cameras": [
-        {
+    "cameras": [{
             "id": "cam01",
             "folder": "cameras/cam01",
-            "lat_deg": 0.0,
-            "lon_deg": -4.491576420597608e-7,
+            "lat_deg": -0.05,
+            "lon_deg": 0.0,
             "alt_m": 1.7,
             "yaw_pitch_roll": [0.0, 5.0, 0.0],
             "fov_degrees": 50.6
@@ -22,8 +21,8 @@
         {
             "id": "cam02",
             "folder": "cameras/cam02",
-            "lat_deg": 3.1441034944183257e-7,
-            "lon_deg": -3.1441034944183257e-7,
+            "lat_deg": 0.035,
+            "lon_deg": -0.035,
             "alt_m": 1.7,
             "yaw_pitch_roll": [-45, 5.0, 0.0],
             "fov_degrees": 50.6
@@ -31,8 +30,8 @@
         {
             "id": "cam03",
             "folder": "cameras/cam03",
-            "lat_deg": 0.0,
-            "lon_deg": 4.491576420597608e-7,
+            "lat_deg": 0.05,
+            "lon_deg": 0.0,
             "alt_m": 1.7,
             "yaw_pitch_roll": [180.0, 5.0, 0.0],
             "fov_degrees": 50.6
