@@ -33,6 +33,16 @@ def geodetic_to_enu(lat: float, lon: float, alt: float,
     up = alt - alt0
     return np.array([east, north, up], dtype=np.float32)
 
+
+def enu_to_geodetic(enu: np.ndarray, lat0: float, lon0: float, alt0: float = 0.0) -> np.ndarray:
+    """Local ENU metres → WGS‑84 (lat, lon in degrees, alt in metres)."""
+    R = 6_378_137.0
+    east, north, up = enu[..., 0], enu[..., 1], enu[..., 2]
+    lat = lat0 + np.rad2deg(north / R)
+    lon = lon0 + np.rad2deg(east / (R * np.cos(np.deg2rad(lat0))))
+    alt = alt0 + up
+    return np.stack([lat, lon, alt], axis=-1)
+
 # ------------------------------------------------------------------ helpers
 def _maybe_start_xvfb() -> None:
     """Start an off-screen OpenGL buffer only on headless Linux boxes."""
@@ -40,13 +50,8 @@ def _maybe_start_xvfb() -> None:
         settings.start_xvfb()
 
 
-def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray, float, float, float]:
-    """Return camera positions, ids, voxel bounds and geo reference.
-
-    The C++ pipeline writes voxel hits in local ENU metres. For visualisation
-    we convert everything back to geodetic degrees so that 1 unit along X/Y
-    equals 1° in longitude/latitude respectively.
-    """
+def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray, bool, tuple[float, float, float]]:
+    """Return camera positions, ids, voxel bounds, and geodetic reference."""
     import json
 
     with meta_file.open() as f:
@@ -54,6 +59,7 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
     cams = meta["cameras"]
     cam_ids = [c["id"] for c in cams]
 
+    
     lat0 = lon0 = alt0 = 0.0
     use_geo = False
     if "geo_reference" in meta:
@@ -70,32 +76,33 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
     lat_factor = deg_per_m if use_geo else 1.0
 
     cam_pos = []
-    for c in cams:
-        if use_geo and "lat_deg" in c:
+    if use_geo:
+        for c in cams:
+            # x=longitude, y=latitude, z=altitude
             cam_pos.append([c["lon_deg"], c["lat_deg"], c.get("alt_m", 0.0)])
-        else:
+        cam_pos = np.asarray(cam_pos, dtype=np.float32)
+    else:
+        for c in cams:
             cam_pos.append(c["position"])
-    cam_pos = np.asarray(cam_pos, dtype=np.float32)
+        cam_pos = np.asarray(cam_pos, dtype=np.float32)
 
     v = meta["voxel"]
     half_m = 0.5 * float(v["N"]) * v["voxel_size"]
     if use_geo and "center_geo" in v:
         cg = v["center_geo"]
-        center = np.array([cg["lon_deg"], cg["lat_deg"], cg.get("alt_m", 0.0)],
-                          dtype=np.float32)
+        center_enu = geodetic_to_enu(cg["lat_deg"], cg["lon_deg"], cg.get("alt_m", 0.0),
+                                     lat0, lon0, alt0)
+        half = 0.5 * N
+        bmin = enu_to_geodetic(center_enu - half, lat0, lon0, alt0)
+        bmax = enu_to_geodetic(center_enu + half, lat0, lon0, alt0)
+        # reorder to (lon, lat, alt) for plotting
+        bmin = bmin[[1, 0, 2]]
+        bmax = bmax[[1, 0, 2]]
     else:
         center = np.asarray(v["center"], dtype=np.float32)
-
-    box_min = center.copy()
-    box_max = center.copy()
-    box_min[0] -= half_m * lon_factor
-    box_max[0] += half_m * lon_factor
-    box_min[1] -= half_m * lat_factor
-    box_max[1] += half_m * lat_factor
-    box_min[2] -= half_m
-    box_max[2] += half_m
-
-    return cam_pos, cam_ids, box_min, box_max, lat0, lon0, alt0, lon_factor, lat_factor
+        half = 0.5 * N
+        bmin, bmax = center - half, center + half
+    return cam_pos, cam_ids, bmin, bmax, use_geo, (lat0, lon0, alt0)
 
 
 # ------------------------------------------------------------------ main
@@ -104,25 +111,20 @@ def main() -> None:
 
     ROOT = Path(__file__).resolve().parent.parent
     BUILD = ROOT / "build"
-    (cam_pos, cam_ids, bmin, bmax,
-     lat0, lon0, alt0, lon_factor, lat_factor) = _load_meta(ROOT / "metadata.json")
-
-    # Generate tick positions every 0.001 degree for longitude/latitude
-    xticks = [(v, f"{v:.3f}") for v in np.arange(bmin[0], bmax[0]+0.001, 0.001)]
-    yticks = [(v, f"{v:.3f}") for v in np.arange(bmin[1], bmax[1]+0.001, 0.001)]
+    cam_pos, cam_ids, bmin, bmax, use_geo, ref = _load_meta(ROOT / "metadata.json")
+    lat0, lon0, alt0 = ref
     axes_opts = dict(xrange=(bmin[0], bmax[0]),
                      yrange=(bmin[1], bmax[1]),
                      zrange=(bmin[2], bmax[2]),
-                     x_values_and_labels=xticks,
-                     y_values_and_labels=yticks,
-                     xtitle="lon (deg)", ytitle="lat (deg)", ztitle="alt (m)")
+                     xtitle="lon_deg", ytitle="lat_deg", ztitle="alt_m")
 
     # actors created once ----------------------------------------------------
-    cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
-    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8, c="red")
+    cam_actors = [Sphere(pos=cam, r=(0.001 if not use_geo else 1e-3), c="red") for cam in cam_pos]
+    offset = np.array([0.2, 0.2, 0]) if not use_geo else np.array([2e-3, 2e-3, 0])
+    cam_labels = [Text3D(cid, cam + offset, s=8, c="red")
                   for cam, cid in zip(cam_pos, cam_ids)]
 
-    pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
+    pts_actor = Points([[0, 0, 0]], r=0.4)           # placeholder
     ray_lines = [Lines([cam], [cam], c="black", lw=1) for cam in cam_pos]
 
     grid_box = Box(pos=(bmin + bmax) / 2, size=bmax - bmin,
@@ -131,7 +133,8 @@ def main() -> None:
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
     plt += [pts_actor, grid_box, *cam_actors, *cam_labels, *ray_lines]
-    plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
+    plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45,
+         zoom=2.0)
 
     # gather xyz files -------------------------------------------------------
     xyz_files = sorted(BUILD.glob("hits_*.xyz"))
@@ -147,13 +150,10 @@ def main() -> None:
         if a.ndim == 1:
             a = a[None]                             # single point → (1,4)
 
-        coords_m, vals = a[:, :3], a[:, 3]          # split xyz + value
-
-        # convert ENU metres back to geodetic degrees
-        coords = np.empty_like(coords_m)
-        coords[:, 0] = lon0 + coords_m[:, 0] * lon_factor
-        coords[:, 1] = lat0 + coords_m[:, 1] * lat_factor
-        coords[:, 2] = alt0 + coords_m[:, 2]
+        coords, vals = a[:, :3], a[:, 3]            # split xyz + value
+        if use_geo:
+            coords = enu_to_geodetic(coords, lat0, lon0, alt0)
+            coords = coords[:, [1, 0, 2]]
 
         # update points – copy=True ⇒ vtk owns its own buffer
         pts_actor.points = coords        # vedo ≥ 2024.5 :contentReference[oaicite:0]{index=0}
