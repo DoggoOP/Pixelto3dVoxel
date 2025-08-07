@@ -16,3 +16,18 @@ inline cv::Matx33f yprDegreesToMatrix(const cv::Vec3f& ypr) {
     cv::Matx33f Rx = {1, 0, 0, 0, cr, -sr, 0, sr, cr};
     return Rz * Ry * Rx; // yaw→pitch→roll (Z‑Y‑X)
 }
+
+// Convert WGS‑84 latitude/longitude/altitude to local ENU metres
+// using a simple equirectangular approximation. The reference
+// latitude/longitude/altitude defines the origin of the local frame.
+inline cv::Vec3f geodeticToENU(float lat_deg, float lon_deg, float alt_m,
+                              float ref_lat_deg, float ref_lon_deg, float ref_alt_m) {
+    const float R = 6378137.0f; // mean Earth radius (m)
+    const float deg2rad = static_cast<float>(CV_PI / 180.0);
+    float dlat = (lat_deg - ref_lat_deg) * deg2rad;
+    float dlon = (lon_deg - ref_lon_deg) * deg2rad;
+    float east  = R * dlon * cosf(ref_lat_deg * deg2rad);
+    float north = R * dlat;
+    float up    = alt_m - ref_alt_m;
+    return {east, north, up};
+}

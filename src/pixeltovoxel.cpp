@@ -90,8 +90,27 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
     json j; f >> j;
     int N = j["voxel"]["N"].get<int>();
     float vs = j["voxel"]["voxel_size"].get<float>();
-    auto c = j["voxel"]["center"];
-    grid = VoxelGrid(N, vs, {c[0].get<float>(), c[1].get<float>(), c[2].get<float>()});
+
+    float ref_lat=0.0f, ref_lon=0.0f, ref_alt=0.0f;
+    bool use_geo = false;
+    if (j.contains("geo_reference")) {
+        auto gref = j["geo_reference"];
+        ref_lat = gref["lat_deg"].get<float>();
+        ref_lon = gref["lon_deg"].get<float>();
+        ref_alt = gref.value("alt_m", 0.0f);
+        use_geo = true;
+    }
+
+    if (use_geo && j["voxel"].contains("center_geo")) {
+        auto cg = j["voxel"]["center_geo"];
+        grid = VoxelGrid(N, vs, geodeticToENU(cg["lat_deg"].get<float>(),
+                                             cg["lon_deg"].get<float>(),
+                                             cg.value("alt_m", 0.0f),
+                                             ref_lat, ref_lon, ref_alt));
+    } else {
+        auto c = j["voxel"]["center"];
+        grid = VoxelGrid(N, vs, {c[0].get<float>(), c[1].get<float>(), c[2].get<float>()});
+    }
 
     fs::path base = fs::path(path).parent_path();
 
@@ -99,9 +118,16 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
         Camera cam;
         cam.id      = jc["id"].get<std::string>();
         cam.folder  = (base / jc["folder"].get<std::string>()).string();
-        cam.position = { jc["position"][0].get<float>(),
-                         jc["position"][1].get<float>(),
-                         jc["position"][2].get<float>() };
+        if (use_geo && jc.contains("lat_deg")) {
+            cam.position = geodeticToENU(jc["lat_deg"].get<float>(),
+                                         jc["lon_deg"].get<float>(),
+                                         jc.value("alt_m", 0.0f),
+                                         ref_lat, ref_lon, ref_alt);
+        } else {
+            cam.position = { jc["position"][0].get<float>(),
+                             jc["position"][1].get<float>(),
+                             jc["position"][2].get<float>() };
+        }
         cam.ypr_deg = { jc["yaw_pitch_roll"][0].get<float>(),
                         jc["yaw_pitch_roll"][1].get<float>(),
                         jc["yaw_pitch_roll"][2].get<float>() };

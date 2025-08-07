@@ -21,6 +21,18 @@ from pathlib import Path
 import numpy as np
 from vedo import Lines, Points, Plotter, Box, Sphere, Text3D, settings
 
+
+def geodetic_to_enu(lat: float, lon: float, alt: float,
+                    lat0: float, lon0: float, alt0: float = 0.0) -> np.ndarray:
+    """WGS‑84 → local ENU metres."""
+    R = 6_378_137.0
+    dlat = np.deg2rad(lat - lat0)
+    dlon = np.deg2rad(lon - lon0)
+    east = R * dlon * np.cos(np.deg2rad(lat0))
+    north = R * dlat
+    up = alt - alt0
+    return np.array([east, north, up], dtype=np.float32)
+
 # ------------------------------------------------------------------ helpers
 def _maybe_start_xvfb() -> None:
     """Start an off-screen OpenGL buffer only on headless Linux boxes."""
@@ -36,11 +48,33 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
         meta = json.load(f)
     cams = meta["cameras"]
     cam_ids = [c["id"] for c in cams]
-    cam_pos = np.asarray([c["position"] for c in cams], dtype=np.float32)
+
+    lat0 = lon0 = alt0 = 0.0
+    use_geo = False
+    if "geo_reference" in meta:
+        gref = meta["geo_reference"]
+        lat0 = gref["lat_deg"]
+        lon0 = gref["lon_deg"]
+        alt0 = gref.get("alt_m", 0.0)
+        use_geo = True
+
+    cam_pos = []
+    for c in cams:
+        if use_geo and "lat_deg" in c:
+            cam_pos.append(geodetic_to_enu(c["lat_deg"], c["lon_deg"], c.get("alt_m", 0.0),
+                                           lat0, lon0, alt0))
+        else:
+            cam_pos.append(c["position"])
+    cam_pos = np.asarray(cam_pos, dtype=np.float32)
 
     v = meta["voxel"]
     N = float(v["N"]) * v["voxel_size"]
-    center = np.asarray(v["center"], dtype=np.float32)
+    if use_geo and "center_geo" in v:
+        cg = v["center_geo"]
+        center = geodetic_to_enu(cg["lat_deg"], cg["lon_deg"], cg.get("alt_m", 0.0),
+                                 lat0, lon0, alt0)
+    else:
+        center = np.asarray(v["center"], dtype=np.float32)
     half = 0.5 * N
     box_min, box_max = center - half, center + half
     return cam_pos, cam_ids, box_min, box_max
