@@ -40,8 +40,13 @@ def _maybe_start_xvfb() -> None:
         settings.start_xvfb()
 
 
-def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray]:
-    """Return camera positions, ids and voxel grid bounds from metadata."""
+def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.ndarray, float, float, float]:
+    """Return camera positions, ids, voxel bounds and geo reference.
+
+    The C++ pipeline writes voxel hits in local ENU metres. For visualisation
+    we convert everything back to geodetic degrees so that 1 unit along X/Y
+    equals 1° in longitude/latitude respectively.
+    """
     import json
 
     with meta_file.open() as f:
@@ -58,26 +63,39 @@ def _load_meta(meta_file: Path) -> tuple[np.ndarray, list[str], np.ndarray, np.n
         alt0 = gref.get("alt_m", 0.0)
         use_geo = True
 
+    # metres ↔ degrees conversion factors
+    R = 6_378_137.0
+    deg_per_m = 180.0 / (np.pi * R)
+    lon_factor = deg_per_m / np.cos(np.deg2rad(lat0)) if use_geo else 1.0
+    lat_factor = deg_per_m if use_geo else 1.0
+
     cam_pos = []
     for c in cams:
         if use_geo and "lat_deg" in c:
-            cam_pos.append(geodetic_to_enu(c["lat_deg"], c["lon_deg"], c.get("alt_m", 0.0),
-                                           lat0, lon0, alt0))
+            cam_pos.append([c["lon_deg"], c["lat_deg"], c.get("alt_m", 0.0)])
         else:
             cam_pos.append(c["position"])
     cam_pos = np.asarray(cam_pos, dtype=np.float32)
 
     v = meta["voxel"]
-    N = float(v["N"]) * v["voxel_size"]
+    half_m = 0.5 * float(v["N"]) * v["voxel_size"]
     if use_geo and "center_geo" in v:
         cg = v["center_geo"]
-        center = geodetic_to_enu(cg["lat_deg"], cg["lon_deg"], cg.get("alt_m", 0.0),
-                                 lat0, lon0, alt0)
+        center = np.array([cg["lon_deg"], cg["lat_deg"], cg.get("alt_m", 0.0)],
+                          dtype=np.float32)
     else:
         center = np.asarray(v["center"], dtype=np.float32)
-    half = 0.5 * N
-    box_min, box_max = center - half, center + half
-    return cam_pos, cam_ids, box_min, box_max
+
+    box_min = center.copy()
+    box_max = center.copy()
+    box_min[0] -= half_m * lon_factor
+    box_max[0] += half_m * lon_factor
+    box_min[1] -= half_m * lat_factor
+    box_max[1] += half_m * lat_factor
+    box_min[2] -= half_m
+    box_max[2] += half_m
+
+    return cam_pos, cam_ids, box_min, box_max, lat0, lon0, alt0, lon_factor, lat_factor
 
 
 # ------------------------------------------------------------------ main
@@ -86,10 +104,18 @@ def main() -> None:
 
     ROOT = Path(__file__).resolve().parent.parent
     BUILD = ROOT / "build"
-    cam_pos, cam_ids, bmin, bmax = _load_meta(ROOT / "metadata.json")
+    (cam_pos, cam_ids, bmin, bmax,
+     lat0, lon0, alt0, lon_factor, lat_factor) = _load_meta(ROOT / "metadata.json")
+
+    # Generate tick positions every 0.001 degree for longitude/latitude
+    xticks = [(v, f"{v:.3f}") for v in np.arange(bmin[0], bmax[0]+0.001, 0.001)]
+    yticks = [(v, f"{v:.3f}") for v in np.arange(bmin[1], bmax[1]+0.001, 0.001)]
     axes_opts = dict(xrange=(bmin[0], bmax[0]),
                      yrange=(bmin[1], bmax[1]),
-                     zrange=(bmin[2], bmax[2]))
+                     zrange=(bmin[2], bmax[2]),
+                     x_values_and_labels=xticks,
+                     y_values_and_labels=yticks,
+                     xtitle="lon (deg)", ytitle="lat (deg)", ztitle="alt (m)")
 
     # actors created once ----------------------------------------------------
     cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
@@ -121,7 +147,13 @@ def main() -> None:
         if a.ndim == 1:
             a = a[None]                             # single point → (1,4)
 
-        coords, vals = a[:, :3], a[:, 3]            # split xyz + value
+        coords_m, vals = a[:, :3], a[:, 3]          # split xyz + value
+
+        # convert ENU metres back to geodetic degrees
+        coords = np.empty_like(coords_m)
+        coords[:, 0] = lon0 + coords_m[:, 0] * lon_factor
+        coords[:, 1] = lat0 + coords_m[:, 1] * lat_factor
+        coords[:, 2] = alt0 + coords_m[:, 2]
 
         # update points – copy=True ⇒ vtk owns its own buffer
         pts_actor.points = coords        # vedo ≥ 2024.5 :contentReference[oaicite:0]{index=0}
