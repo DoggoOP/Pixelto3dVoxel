@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Animate the per-frame voxel hits together with the 3 camera rays.
+Animate the per-frame voxel hits together with the camera rays.
 
 Inputs
 ------
-build/hits_*.xyz        text files:  x  y  z  value
-metadata.json           camera calibration with "position"
+build/hits_<camid>_*.xyz   text files:  x  y  z  value
+metadata.json              camera calibration with "position"
 
 Run
 ---
@@ -53,54 +53,69 @@ def main() -> None:
     ROOT = Path(__file__).resolve().parent.parent
     BUILD = ROOT / "build"
     cam_pos, cam_ids, bmin, bmax = _load_meta(ROOT / "metadata.json")
+    lat_vals = np.round(np.arange(bmin[1], bmax[1]+1e-6, 0.001), 3)
+    lon_vals = np.round(np.arange(bmin[0], bmax[0]+1e-6, 0.001), 3)
     axes_opts = dict(xrange=(bmin[0], bmax[0]),
                      yrange=(bmin[1], bmax[1]),
-                     zrange=(bmin[2], bmax[2]))
+                     zrange=(bmin[2], bmax[2]),
+                     xtitle="longitude",
+                     ytitle="latitude",
+                     ztitle="height",
+                     x_values_and_labels=[(v, f"{v:.3f}") for v in lon_vals],
+                     y_values_and_labels=[(v, f"{v:.3f}") for v in lat_vals])
 
     # actors created once ----------------------------------------------------
-    cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
-    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8, c="red")
-                  for cam, cid in zip(cam_pos, cam_ids)]
+    colors = ["red", "green", "blue", "magenta", "orange", "cyan"]
+    cam_actors = [Sphere(pos=cam, r=0.1, c=colors[i % len(colors)])
+                  for i, cam in enumerate(cam_pos)]
+    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8,
+                         c=colors[i % len(colors)])
+                  for i, (cam, cid) in enumerate(zip(cam_pos, cam_ids))]
 
-    pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
-    ray_lines = [Lines([cam], [cam], c="black", lw=1) for cam in cam_pos]
+    pts_actors = [Points([[0, 0, 0]], r=4, c=colors[i % len(colors)])
+                  for i in range(len(cam_ids))]
+    ray_lines = [Lines([cam], [cam], c=colors[i % len(colors)], lw=1)
+                 for i, cam in enumerate(cam_pos)]
 
     grid_box = Box(pos=(bmin + bmax) / 2, size=bmax - bmin,
                    c=None, alpha=0.1).wireframe()
 
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
-    plt += [pts_actor, grid_box, *cam_actors, *cam_labels, *ray_lines]
+    plt += [grid_box, *cam_actors, *cam_labels, *pts_actors, *ray_lines]
     plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
 
     # gather xyz files -------------------------------------------------------
-    xyz_files = sorted(BUILD.glob("hits_*.xyz"))
+    xyz_files = sorted(BUILD.glob("hits_*_*.xyz"))
     if not xyz_files:
-        sys.exit("No hits_*.xyz files found in build/")
+        sys.exit("No hits files found in build/")
+
+    frame_ids = sorted({int(f.stem.split("_")[-1]) for f in xyz_files})
 
     # frame loop -------------------------------------------------------------
-    for xyz in xyz_files:
-        if xyz.stat().st_size == 0:
-            continue
+    for fi in frame_ids:
+        for ci, cid in enumerate(cam_ids):
+            xyz = BUILD / f"hits_{cid}_{fi:04d}.xyz"
+            if not xyz.exists() or xyz.stat().st_size == 0:
+                ray_lines[ci].points = [cam_pos[ci], cam_pos[ci]]
+                pts_actors[ci].points = []
+                continue
 
-        a = np.loadtxt(xyz, dtype=np.float64)       # (N,4) or (4,)
-        if a.ndim == 1:
-            a = a[None]                             # single point → (1,4)
+            a = np.loadtxt(xyz, dtype=np.float64)
+            if a.ndim == 1:
+                a = a[None]
 
-        coords, vals = a[:, :3], a[:, 3]            # split xyz + value
+            coords, vals = a[:, :3], a[:, 3]
 
-        # update points – copy=True ⇒ vtk owns its own buffer
-        pts_actor.points = coords        # vedo ≥ 2024.5 :contentReference[oaicite:0]{index=0}
-        pts_actor.pointdata["val"] = vals
-        pts_actor.cmap("jet", "val")
+            pts_actors[ci].points = coords
+            pts_actors[ci].pointdata["val"] = vals
+            pts_actors[ci].cmap("jet", "val")
 
-        # draw rays from each camera to every hit
-        for cam, lines in zip(cam_pos, ray_lines):
             n = len(coords)
             ps = np.empty((2 * n, 3), dtype=np.float32)
-            ps[0::2] = cam
+            ps[0::2] = cam_pos[ci]
             ps[1::2] = coords
-            lines.points = ps
+            ray_lines[ci].points = ps
 
         plt.render()
         time.sleep(0.03)                            # ~30 fps

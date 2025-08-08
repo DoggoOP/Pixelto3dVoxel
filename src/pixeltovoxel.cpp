@@ -31,13 +31,14 @@ int main(int argc, char** argv) {
 
     std::vector<cv::Mat> prevImgs(cams.size());
     for (size_t fi = 0; fi < maxFrames; ++fi) {
-        grid.clear();
         for (size_t ci = 0; ci < cams.size(); ++ci) {
             const Camera& cam = cams[ci];
             if (fi >= cam.frames.size()) continue;
             cv::Mat img = cv::imread(cam.frames[fi], cv::IMREAD_GRAYSCALE);
             if (img.empty()) continue;
             if (prevImgs[ci].empty()) { prevImgs[ci] = img; continue; }
+
+            grid.clear();
             cv::Mat diff;
             cv::absdiff(img, prevImgs[ci], diff);
             prevImgs[ci] = img;
@@ -60,25 +61,25 @@ int main(int argc, char** argv) {
                     cast_ray(cam.position, dir_world, grid, static_cast<float>(row[u]));
                 }
             }
-        }
 
-        // write hits for this frame
-        std::ostringstream oss;
-        oss << "hits_" << std::setw(4) << std::setfill('0') << fi << ".xyz";
-        std::ofstream xyz(oss.str());
-        const float THRESH = 5.0f;
-        const float half = 0.5f * grid.N * grid.voxelSize;
-        cv::Vec3f boxMin = grid.center - cv::Vec3f(half, half, half);
-        for (int iz=0; iz<grid.N; ++iz)
-          for (int iy=0; iy<grid.N; ++iy)
-            for (int ix=0; ix<grid.N; ++ix) {
-              float v = grid.data[(iz*grid.N + iy)*grid.N + ix];
-              if (v < THRESH) continue;
-              float x = boxMin[0] + (ix + 0.5f) * grid.voxelSize;
-              float y = boxMin[1] + (iy + 0.5f) * grid.voxelSize;
-              float z = boxMin[2] + (iz + 0.5f) * grid.voxelSize;
-              xyz << x << " " << y << " " << z << " " << v << "\n";
-            }
+            // write hits for this camera/frame
+            std::ostringstream oss;
+            oss << "hits_" << cam.id << "_" << std::setw(4) << std::setfill('0') << fi << ".xyz";
+            std::ofstream xyz(oss.str());
+            const float THRESH = 5.0f;
+            const float half = 0.5f * grid.N * grid.voxelSize;
+            cv::Vec3f boxMin = grid.center - cv::Vec3f(half, half, half);
+            for (int iz=0; iz<grid.N; ++iz)
+              for (int iy=0; iy<grid.N; ++iy)
+                for (int ix=0; ix<grid.N; ++ix) {
+                  float v = grid.data[(iz*grid.N + iy)*grid.N + ix];
+                  if (v < THRESH) continue;
+                  float x = boxMin[0] + (ix + 0.5f) * grid.voxelSize;
+                  float y = boxMin[1] + (iy + 0.5f) * grid.voxelSize;
+                  float z = boxMin[2] + (iz + 0.5f) * grid.voxelSize;
+                  xyz << x << " " << y << " " << z << " " << v << "\n";
+                }
+        }
     }
 
     return 0;
