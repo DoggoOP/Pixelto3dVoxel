@@ -25,12 +25,21 @@ int main(int argc, char** argv) {
     VoxelGrid grid(1,1.0f,{0,0,0}); // temp, will be replaced in load
     load_metadata(argv[1], cams, grid);
 
+    fs::create_directories("build");
+
     const float MOTION_THRESHOLD = 2.0f;
+    const float THRESH = 5.0f;
+    const float half = 0.5f * grid.N * grid.voxelSize;
+    const cv::Vec3f boxMin = grid.center - cv::Vec3f(half, half, half);
     size_t maxFrames = 0;
     for (const auto& c : cams) maxFrames = std::max(maxFrames, c.frames.size());
 
     std::vector<cv::Mat> prevImgs(cams.size());
     for (size_t fi = 0; fi < maxFrames; ++fi) {
+        std::ostringstream oss;
+        oss << "build/hits_" << std::setw(4) << std::setfill('0') << fi << ".xyz";
+        std::ofstream xyz(oss.str());
+
         for (size_t ci = 0; ci < cams.size(); ++ci) {
             const Camera& cam = cams[ci];
             if (fi >= cam.frames.size()) continue;
@@ -62,13 +71,6 @@ int main(int argc, char** argv) {
                 }
             }
 
-            // write hits for this camera/frame
-            std::ostringstream oss;
-            oss << "hits_" << cam.id << "_" << std::setw(4) << std::setfill('0') << fi << ".xyz";
-            std::ofstream xyz(oss.str());
-            const float THRESH = 5.0f;
-            const float half = 0.5f * grid.N * grid.voxelSize;
-            cv::Vec3f boxMin = grid.center - cv::Vec3f(half, half, half);
             for (int iz=0; iz<grid.N; ++iz)
               for (int iy=0; iy<grid.N; ++iy)
                 for (int ix=0; ix<grid.N; ++ix) {
@@ -77,7 +79,7 @@ int main(int argc, char** argv) {
                   float x = boxMin[0] + (ix + 0.5f) * grid.voxelSize;
                   float y = boxMin[1] + (iy + 0.5f) * grid.voxelSize;
                   float z = boxMin[2] + (iz + 0.5f) * grid.voxelSize;
-                  xyz << x << " " << y << " " << z << " " << v << "\n";
+                  xyz << cam.id << " " << x << " " << y << " " << z << " " << v << "\n";
                 }
         }
     }

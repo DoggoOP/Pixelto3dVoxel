@@ -4,8 +4,8 @@ Animate the per-frame voxel hits together with the camera rays.
 
 Inputs
 ------
-build/hits_<camid>_*.xyz   text files:  x  y  z  value
-metadata.json              camera calibration with "position"
+build/hits_*.xyz          text files:  camid  x  y  z  value
+metadata.json            camera calibration with "position"
 
 Run
 ---
@@ -86,26 +86,34 @@ def main() -> None:
     plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
 
     # gather xyz files -------------------------------------------------------
-    xyz_files = sorted(BUILD.glob("hits_*_*.xyz"))
+    xyz_files = sorted(BUILD.glob("hits_*.xyz"))
     if not xyz_files:
         sys.exit("No hits files found in build/")
 
-    frame_ids = sorted({int(f.stem.split("_")[-1]) for f in xyz_files})
+    frame_ids = sorted(int(f.stem.split("_")[-1]) for f in xyz_files)
 
     # frame loop -------------------------------------------------------------
     for fi in frame_ids:
+        xyz = BUILD / f"hits_{fi:04d}.xyz"
+        data_by_cam = {cid: [] for cid in cam_ids}
+        if xyz.exists() and xyz.stat().st_size > 0:
+            with xyz.open() as f:
+                for line in f:
+                    parts = line.strip().split()
+                    if len(parts) != 5:
+                        continue
+                    cid, x, y, z, val = parts
+                    if cid in data_by_cam:
+                        data_by_cam[cid].append((float(x), float(y), float(z), float(val)))
+
         for ci, cid in enumerate(cam_ids):
-            xyz = BUILD / f"hits_{cid}_{fi:04d}.xyz"
-            if not xyz.exists() or xyz.stat().st_size == 0:
+            hits = np.asarray(data_by_cam[cid], dtype=np.float64)
+            if hits.size == 0:
                 ray_lines[ci].points = [cam_pos[ci], cam_pos[ci]]
                 pts_actors[ci].points = []
                 continue
 
-            a = np.loadtxt(xyz, dtype=np.float64)
-            if a.ndim == 1:
-                a = a[None]
-
-            coords, vals = a[:, :3], a[:, 3]
+            coords, vals = hits[:, :3], hits[:, 3]
 
             pts_actors[ci].points = coords
             pts_actors[ci].pointdata["val"] = vals
