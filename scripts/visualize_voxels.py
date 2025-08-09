@@ -89,8 +89,18 @@ def main() -> None:
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
     plt += [pts_actor, grid_box, *cam_actors, *cam_labels, *ray_lines]
-    plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
-
+    try:
+        plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
+    except TypeError as e:
+        # Older versions of vedo do not support explicit tick placement.
+        if "ticks" in str(e):
+            for k in ("xticks", "yticks", "zticks"):
+                axes_opts.pop(k, None)
+            plt.axes = axes_opts
+            plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
+        else:
+            raise
+    
     # gather xyz files -------------------------------------------------------
     xyz_files = sorted(BUILD.glob("hits_*.xyz"))
     if not xyz_files:
