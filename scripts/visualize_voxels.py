@@ -53,9 +53,16 @@ def main() -> None:
     ROOT = Path(__file__).resolve().parent.parent
     BUILD = ROOT / "build"
     cam_pos, cam_ids, bmin, bmax = _load_meta(ROOT / "metadata.json")
+    tick = 0.005  # degrees
+    span = bmax - bmin
+    divs = tuple(max(1, int(round(s / tick))) for s in span)
     axes_opts = dict(xrange=(bmin[0], bmax[0]),
                      yrange=(bmin[1], bmax[1]),
-                     zrange=(bmin[2], bmax[2]))
+                     zrange=(bmin[2], bmax[2]),
+                     xtitle="lon (deg)",
+                     ytitle="lat (deg)",
+                     ztitle="alt (m)",
+                     number_of_divisions=divs)
 
     # actors created once ----------------------------------------------------
     cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
@@ -95,7 +102,9 @@ def main() -> None:
         pts_actor.cmap("jet", "val")
 
         # draw rays from each camera to every hit
-        for cam, lines in zip(cam_pos, ray_lines):
+        for ci in range(len(cam_pos)):
+            cam = cam_pos[ci]
+            lines = ray_lines[ci]
             n = len(coords)
             ps = np.empty((2 * n, 3), dtype=np.float32)
             ps[0::2] = cam
