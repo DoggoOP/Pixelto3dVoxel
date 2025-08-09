@@ -22,7 +22,7 @@ include_directories(include ${JSON_INCLUDE_DIR})
 
 # --------------------------------------------------------------------------
 file(GLOB VOXEL_SOURCES src/*.cpp)
-add_executable(pixeltovoxel src/pixeltovoxel.cpp)
+add_executable(pixeltovoxel src/pixeltovoxel.cpp src/geo_utils.cpp)
 add_executable(process_rays src/process_rays.cpp)
 
 target_link_libraries(pixeltovoxel PRIVATE ${OpenCV_LIBS})

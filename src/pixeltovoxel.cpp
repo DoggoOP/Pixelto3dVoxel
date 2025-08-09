@@ -9,11 +9,13 @@
 #include "camera.h"
 #include "math_utils.h"
 #include "voxel_grid.h"
+#include "geo_utils.h"
 
 using json = nlohmann::json;
 namespace fs = std::filesystem;
 
 // --- forward declarations --------------------------------------------------
+static GeoRef g_ref; // global geodetic reference
 static void load_metadata(const std::string& path, std::vector<Camera>& cams, VoxelGrid& grid);
 static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid,
                      float pixVal, std::vector<uint8_t>& camMask, uint8_t camBit);
@@ -85,7 +87,8 @@ int main(int argc, char** argv) {
               float x = boxMin[0] + (ix + 0.5f) * grid.voxelSize;
               float y = boxMin[1] + (iy + 0.5f) * grid.voxelSize;
               float z = boxMin[2] + (iz + 0.5f) * grid.voxelSize;
-              xyz << x << " " << y << " " << z << " " << v << " "
+              cv::Vec3d lla = enuToGeodetic(g_ref, cv::Vec3d(x, y, z));
+              xyz << lla[0] << " " << lla[1] << " " << lla[2] << " " << v << " "
                   << static_cast<int>(camMask[idx]) << "\n";
             }
     }
@@ -100,17 +103,47 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
     int N = j["voxel"]["N"].get<int>();
     float vs = j["voxel"]["voxel_size"].get<float>();
     auto c = j["voxel"]["center"];
-    grid = VoxelGrid(N, vs, {c[0].get<float>(), c[1].get<float>(), c[2].get<float>()});
 
     fs::path base = fs::path(path).parent_path();
 
-    for (auto& jc : j["cameras"]) {
+    // Gather camera geodetic positions
+    std::vector<json> camJson = j["cameras"].get<std::vector<json>>();
+    std::vector<cv::Vec3d> camLLA;
+    camLLA.reserve(camJson.size());
+    for (const auto& jc : camJson) {
+        camLLA.emplace_back(jc["position"][0].get<double>(),
+                             jc["position"][1].get<double>(),
+                             jc["position"][2].get<double>());
+    }
+
+    // Compute reference as average of camera positions
+    double latSum=0, lonSum=0, altSum=0;
+    for (const auto& lla : camLLA) {
+        latSum += lla[0];
+        lonSum += lla[1];
+        altSum += lla[2];
+    }
+    g_ref = makeGeoRef(latSum / camLLA.size(), lonSum / camLLA.size(), altSum / camLLA.size());
+
+    // Convert grid center from geodetic to ENU
+    cv::Vec3d cenEnu = geodeticToEnu(g_ref,
+                                     c[0].get<double>(),
+                                     c[1].get<double>(),
+                                     c[2].get<double>());
+    grid = VoxelGrid(N, vs, {static_cast<float>(cenEnu[0]),
+                             static_cast<float>(cenEnu[1]),
+                             static_cast<float>(cenEnu[2])});
+
+    // Process each camera
+    for (size_t i = 0; i < camJson.size(); ++i) {
+        const auto& jc = camJson[i];
         Camera cam;
         cam.id      = jc["id"].get<std::string>();
         cam.folder  = (base / jc["folder"].get<std::string>()).string();
-        cam.position = { jc["position"][0].get<float>(),
-                         jc["position"][1].get<float>(),
-                         jc["position"][2].get<float>() };
+        cv::Vec3d posEnu = geodeticToEnu(g_ref, camLLA[i][0], camLLA[i][1], camLLA[i][2]);
+        cam.position = {static_cast<float>(posEnu[0]),
+                        static_cast<float>(posEnu[1]),
+                        static_cast<float>(posEnu[2])};
         cam.ypr_deg = { jc["yaw_pitch_roll"][0].get<float>(),
                         jc["yaw_pitch_roll"][1].get<float>(),
                         jc["yaw_pitch_roll"][2].get<float>() };
