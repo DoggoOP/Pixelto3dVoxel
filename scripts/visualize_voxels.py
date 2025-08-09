@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Animate the per-frame voxel hits together with the 3 camera rays.
+Animate the per-frame voxel hits together with the camera rays.
 
 Inputs
 ------
-build/hits_*.xyz        text files:  x  y  z  value
+build/hits_*.xyz        text files:  x  y  z  value  camMask
 metadata.json           camera calibration with "position"
 
 Run
@@ -54,23 +54,34 @@ def main() -> None:
     BUILD = ROOT / "build"
     cam_pos, cam_ids, bmin, bmax = _load_meta(ROOT / "metadata.json")
     tick = 0.005  # degrees
-    span = bmax - bmin
-    divs = tuple(max(1, int(round(s / tick))) for s in span)
+    xticks = np.arange(bmin[0], bmax[0] + tick, tick)
+    yticks = np.arange(bmin[1], bmax[1] + tick, tick)
+    if len(xticks) > 200:
+        xticks = np.linspace(bmin[0], bmax[0], 11)
+    if len(yticks) > 200:
+        yticks = np.linspace(bmin[1], bmax[1], 11)
+    zticks = np.linspace(bmin[2], bmax[2], 11)
     axes_opts = dict(xrange=(bmin[0], bmax[0]),
                      yrange=(bmin[1], bmax[1]),
                      zrange=(bmin[2], bmax[2]),
                      xtitle="lon (deg)",
                      ytitle="lat (deg)",
                      ztitle="alt (m)",
-                     number_of_divisions=divs)
+                     xticks=xticks,
+                     yticks=yticks,
+                     zticks=zticks)
 
     # actors created once ----------------------------------------------------
-    cam_actors = [Sphere(pos=cam, r=0.1, c="red") for cam in cam_pos]
-    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8, c="red")
-                  for cam, cid in zip(cam_pos, cam_ids)]
+    cam_colors = ["red", "green", "blue", "orange", "purple", "cyan"]
+    cam_actors = [Sphere(pos=cam, r=0.2, c=cam_colors[i % len(cam_colors)])
+                  for i, cam in enumerate(cam_pos)]
+    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8,
+                         c=cam_colors[i % len(cam_colors)])
+                  for i, (cam, cid) in enumerate(zip(cam_pos, cam_ids))]
 
     pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
-    ray_lines = [Lines([cam], [cam], c="black", lw=1) for cam in cam_pos]
+    ray_lines = [Lines([cam], [cam], c=cam_colors[i % len(cam_colors)], lw=1)
+                 for i, cam in enumerate(cam_pos)]
 
     grid_box = Box(pos=(bmin + bmax) / 2, size=bmax - bmin,
                    c=None, alpha=0.1).wireframe()
@@ -90,25 +101,29 @@ def main() -> None:
         if xyz.stat().st_size == 0:
             continue
 
-        a = np.loadtxt(xyz, dtype=np.float64)       # (N,4) or (4,)
+        a = np.loadtxt(xyz, dtype=np.float64)       # (N,5) or (5,)
         if a.ndim == 1:
-            a = a[None]                             # single point → (1,4)
+            a = a[None]
 
-        coords, vals = a[:, :3], a[:, 3]            # split xyz + value
+        coords, vals = a[:, :3], a[:, 3]
+        masks = a[:, 4].astype(np.uint8)
 
         # update points – copy=True ⇒ vtk owns its own buffer
-        pts_actor.points = coords        # vedo ≥ 2024.5 :contentReference[oaicite:0]{index=0}
+        pts_actor.points = coords        # vedo ≥ 2024.5
         pts_actor.pointdata["val"] = vals
         pts_actor.cmap("jet", "val")
 
-        # draw rays from each camera to every hit
-        for ci in range(len(cam_pos)):
-            cam = cam_pos[ci]
-            lines = ray_lines[ci]
-            n = len(coords)
+        # draw rays from each camera only to its hits
+        for ci, (cam, lines) in enumerate(zip(cam_pos, ray_lines)):
+            mask = (masks & (1 << ci)) != 0
+            pts = coords[mask]
+            n = len(pts)
+            if n == 0:
+                lines.points = np.array([cam, cam])
+                continue
             ps = np.empty((2 * n, 3), dtype=np.float32)
             ps[0::2] = cam
-            ps[1::2] = coords
+            ps[1::2] = pts
             lines.points = ps
 
         plt.render()

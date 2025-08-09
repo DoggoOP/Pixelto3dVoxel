@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 #include <algorithm>
+#include <cstdint>
 #include "camera.h"
 #include "math_utils.h"
 #include "voxel_grid.h"
@@ -14,7 +15,8 @@ namespace fs = std::filesystem;
 
 // --- forward declarations --------------------------------------------------
 static void load_metadata(const std::string& path, std::vector<Camera>& cams, VoxelGrid& grid);
-static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid, float pixVal);
+static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid,
+                     float pixVal, std::vector<uint8_t>& camMask, uint8_t camBit);
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -25,6 +27,8 @@ int main(int argc, char** argv) {
     VoxelGrid grid(1,1.0f,{0,0,0}); // temp, will be replaced in load
     load_metadata(argv[1], cams, grid);
 
+    std::vector<uint8_t> camMask(grid.N * grid.N * grid.N);
+
     const float MOTION_THRESHOLD = 2.0f;
     size_t maxFrames = 0;
     for (const auto& c : cams) maxFrames = std::max(maxFrames, c.frames.size());
@@ -32,6 +36,7 @@ int main(int argc, char** argv) {
     std::vector<cv::Mat> prevImgs(cams.size());
     for (size_t fi = 0; fi < maxFrames; ++fi) {
         grid.clear();
+        std::fill(camMask.begin(), camMask.end(), 0);
         for (size_t ci = 0; ci < cams.size(); ++ci) {
             const Camera& cam = cams[ci];
             if (fi >= cam.frames.size()) continue;
@@ -57,7 +62,9 @@ int main(int argc, char** argv) {
                     // body X=fwd, Y=left, Z=up
                     cv::Vec3f dir_body(pz, -px, py);
                     cv::Vec3f dir_world = Rcw * cv::normalize(dir_body);
-                    cast_ray(cam.position, dir_world, grid, static_cast<float>(row[u]));
+                    cast_ray(cam.position, dir_world, grid,
+                             static_cast<float>(row[u]), camMask,
+                             static_cast<uint8_t>(1u << ci));
                 }
             }
         }
@@ -72,12 +79,14 @@ int main(int argc, char** argv) {
         for (int iz=0; iz<grid.N; ++iz)
           for (int iy=0; iy<grid.N; ++iy)
             for (int ix=0; ix<grid.N; ++ix) {
-              float v = grid.data[(iz*grid.N + iy)*grid.N + ix];
+              int idx = (iz*grid.N + iy)*grid.N + ix;
+              float v = grid.data[idx];
               if (v < THRESH) continue;
               float x = boxMin[0] + (ix + 0.5f) * grid.voxelSize;
               float y = boxMin[1] + (iy + 0.5f) * grid.voxelSize;
               float z = boxMin[2] + (iz + 0.5f) * grid.voxelSize;
-              xyz << x << " " << y << " " << z << " " << v << "\n";
+              xyz << x << " " << y << " " << z << " " << v << " "
+                  << static_cast<int>(camMask[idx]) << "\n";
             }
     }
 
@@ -121,7 +130,8 @@ static void load_metadata(const std::string& path, std::vector<Camera>& cams, Vo
 
 // ---------------------------------------------------------------------------
 // 3‑D DDA traversal ----------------------------------------------------------
-static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid, float pixVal) {
+static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& grid,
+                     float pixVal, std::vector<uint8_t>& camMask, uint8_t camBit) {
     // compute entry point into bounding box
     const float half = 0.5f * grid.N * grid.voxelSize;
     cv::Vec3f boxMin = grid.center - cv::Vec3f(half, half, half);
@@ -164,6 +174,7 @@ static void cast_ray(const cv::Vec3f& camPos, const cv::Vec3f& dir, VoxelGrid& g
     for (int stepCount=0; stepCount<MAX_STEPS; ++stepCount) {
         if (ix<0||iy<0||iz<0||ix>=grid.N||iy>=grid.N||iz>=grid.N) break;
         grid.add(ix,iy,iz,pixVal);
+        camMask[grid.idx(ix,iy,iz)] |= camBit;
         // advance to next voxel
         if (tMaxV[0] < tMaxV[1]) {
             if (tMaxV[0] < tMaxV[2]) { ix += step[0]; tMaxV[0] += tDelta[0]; }
