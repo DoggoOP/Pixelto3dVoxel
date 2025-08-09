@@ -73,22 +73,31 @@ def main() -> None:
 
     # actors created once ----------------------------------------------------
     cam_colors = ["red", "green", "blue", "orange", "purple", "cyan"]
-    cam_actors = [Sphere(pos=cam, r=0.2, c=cam_colors[i % len(cam_colors)])
-                  for i, cam in enumerate(cam_pos)]
-    cam_labels = [Text3D(cid, cam + np.array([0.2, 0.2, 0]), s=8,
-                         c=cam_colors[i % len(cam_colors)])
-                  for i, (cam, cid) in enumerate(zip(cam_pos, cam_ids))]
+    cam_actors = [
+        Sphere(pos=cam, r=0.01, c=cam_colors[i % len(cam_colors)])
+        for i, cam in enumerate(cam_pos)
+    ]
+    cam_labels = [
+        Text3D(cid, cam + np.array([0.02, 0.02, 0]), s=8,
+               c=cam_colors[i % len(cam_colors)])
+        for i, (cam, cid) in enumerate(zip(cam_pos, cam_ids))
+    ]
 
-    pts_actor = Points([[0, 0, 0]], r=4)           # placeholder
-    ray_lines = [Lines([cam], [cam], c=cam_colors[i % len(cam_colors)], lw=1)
-                 for i, cam in enumerate(cam_pos)]
+    hit_pts = [
+        Points([[0, 0, 0]], r=4, c=cam_colors[i % len(cam_colors)])
+        for i in range(len(cam_pos))
+    ]
+    ray_lines = [
+        Lines([cam], [cam], c=cam_colors[i % len(cam_colors)], lw=1)
+        for i, cam in enumerate(cam_pos)]
+
 
     grid_box = Box(pos=(bmin + bmax) / 2, size=bmax - bmin,
                    c=None, alpha=0.1).wireframe()
 
     plt = Plotter(bg="white", axes=axes_opts, interactive=False,
                   title="Voxel hits with camera rays")
-    plt += [pts_actor, grid_box, *cam_actors, *cam_labels, *ray_lines]
+    plt += [grid_box, *cam_actors, *cam_labels, *hit_pts, *ray_lines]
     try:
         plt.show(resetcam=True, viewup="z", azimuth=45, elevation=-45)
     except TypeError as e:
@@ -115,18 +124,14 @@ def main() -> None:
         if a.ndim == 1:
             a = a[None]
 
-        coords, vals = a[:, :3], a[:, 3]
+        coords = a[:, :3]
         masks = a[:, 4].astype(np.uint8)
 
-        # update points – copy=True ⇒ vtk owns its own buffer
-        pts_actor.points = coords        # vedo ≥ 2024.5
-        pts_actor.pointdata["val"] = vals
-        pts_actor.cmap("jet", "val")
-
-        # draw rays from each camera only to its hits
-        for ci, (cam, lines) in enumerate(zip(cam_pos, ray_lines)):
+        # draw rays and per-camera hit points
+        for ci, (cam, lines, pts_actor) in enumerate(zip(cam_pos, ray_lines, hit_pts)):
             mask = (masks & (1 << ci)) != 0
             pts = coords[mask]
+            pts_actor.points = pts if len(pts) else np.empty((0, 3))
             n = len(pts)
             if n == 0:
                 lines.points = np.array([cam, cam])
